@@ -53,7 +53,13 @@
   .job .st { font-size: 12px; padding: 2px 8px; border-radius: 20px; background: #21262d; white-space: nowrap; }
   .st.transcribiendo { color: var(--accent); } .st.hecho { color: var(--ok); }
   .st.error { color: var(--err); } .st.cargando, .st.en_cola { color: var(--warn); }
-  .job .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .st.cancelado { color: var(--muted); }
+  .job .meta { font-size: 12px; color: var(--muted); margin-top: 6px; display: flex; flex-wrap: wrap;
+    align-items: center; gap: 4px 12px; }
+  .job .acts { margin-left: auto; display: flex; gap: 14px; align-items: center; }
+  .job .acts .link, .job .acts a.dl { margin: 0; }
+  button.link.danger { color: var(--err); }
+  button.link.danger:hover { color: #ff7b72; }
   .empty { color: var(--muted); font-size: 13px; }
   a.dl { color: var(--accent); text-decoration: none; font-size: 13px; }
 </style>
@@ -203,16 +209,34 @@ async function tickJobs() {
   const box = $('jobs');
   if (!jobs.length) { box.innerHTML = '<span class="empty">Sin trabajos todavía.</span>'; return; }
   box.innerHTML = jobs.map(j => {
-    const dl = j.estado === 'hecho' ? ` · <a class="dl" href="/api/descargar/${j.id}">descargar .txt</a>` : '';
+    const activo = (j.estado === 'transcribiendo' || j.estado === 'en_cola' || j.estado === 'cargando');
+    const dl = j.estado === 'hecho' ? `<a class="dl" href="/api/descargar/${j.id}">↓ descargar .txt</a>` : '';
+    const cancelar = activo ? `<button class="link danger" onclick="cancelar('${j.id}')">cancelar</button>` : '';
+    const quitar = !activo ? `<button class="link" onclick="quitar('${j.id}')">quitar</button>` : '';
     const err = j.error ? `<div class="meta" style="color:var(--err)">${j.error}</div>` : '';
     const min = s => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
     return `<div class="job">
-      <div class="top"><span class="name">${j.nombre}</span><span class="st ${j.estado}">${j.estado}</span></div>
+      <div class="top">
+        <span class="name">${j.nombre}</span>
+        <span class="st ${j.estado}">${j.estado.replace('_',' ')}</span>
+      </div>
       <div class="bar"><i style="width:${j.porcentaje}%"></i></div>
-      <div class="meta">${j.porcentaje}% · ${min(j.avance_seg)}/${min(j.duracion_total)} · ${j.n_segmentos} segmentos · ${j.transcurrido}s${dl}</div>
+      <div class="meta">
+        ${j.porcentaje}% · ${min(j.avance_seg)}/${min(j.duracion_total)} · ${j.n_segmentos} segmentos · ${j.transcurrido}s
+        <span class="acts">${dl}${cancelar}${quitar}</span>
+      </div>
       ${err}
     </div>`;
   }).join('');
+}
+
+async function cancelar(id) {
+  await fetch('/api/cancelar/' + id, { method: 'POST' });
+  tickJobs();
+}
+async function quitar(id) {
+  await fetch('/api/trabajo/' + id, { method: 'DELETE' });
+  tickJobs();
 }
 
 async function tickMetrics() {

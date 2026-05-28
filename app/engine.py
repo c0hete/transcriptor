@@ -37,7 +37,7 @@ class Trabajo:
     id: str
     nombre: str
     destino: str
-    estado: str = "en_cola"          # en_cola | cargando | transcribiendo | hecho | error
+    estado: str = "en_cola"          # en_cola | cargando | transcribiendo | hecho | error | cancelado
     duracion_total: float = 0.0       # segundos de audio
     avance_seg: float = 0.0           # segundos de audio ya procesados
     porcentaje: float = 0.0
@@ -46,7 +46,12 @@ class Trabajo:
     fin: float = 0.0
     salida_path: str = ""
     error: str = ""
+    cancelar: bool = False            # bandera: el motor la chequea entre segmentos
     _lock: Lock = field(default_factory=Lock, repr=False)
+
+    def pedir_cancelar(self):
+        with self._lock:
+            self.cancelar = True
 
     def snapshot(self) -> dict:
         with self._lock:
@@ -115,6 +120,11 @@ class Motor:
                 trabajo.estado, trabajo.error, trabajo.fin = "error", str(e), time.time()
                 return
 
+            # Cancelado mientras esperaba en cola / cargaba el modelo
+            if trabajo.cancelar:
+                trabajo.estado, trabajo.fin = "cancelado", time.time()
+                return
+
             trabajo.estado = "transcribiendo"
             try:
                 segments, info = self._model.transcribe(
@@ -130,6 +140,7 @@ class Motor:
 
             os.makedirs(os.path.dirname(trabajo.salida_path), exist_ok=True)
             ult, n = 0.0, 0
+            cancelado = False
             try:
                 with open(trabajo.salida_path, "w", encoding="utf-8") as f:
                     f.write("TRANSCRIPCION\n")
@@ -138,6 +149,12 @@ class Motor:
                             % (self.modelo_nombre, self.device_real, self.compute_real, self.language or "auto"))
                     f.write("=" * 70 + "\n\n")
                     for s in segments:
+                        # Cancelación cooperativa: cortamos en el próximo segmento (~1-2s).
+                        if trabajo.cancelar:
+                            f.write("\n[CANCELADO por el usuario a los %02d:%02d — texto parcial]\n"
+                                    % (int(ult) // 60, int(ult) % 60))
+                            cancelado = True
+                            break
                         f.write("[%02d:%02d] %s\n" % (int(s.start) // 60, int(s.start) % 60, s.text.strip()))
                         ult, n = s.end, n + 1
                         with trabajo._lock:
@@ -149,6 +166,7 @@ class Motor:
                 return
 
             with trabajo._lock:
-                trabajo.estado = "hecho"
-                trabajo.porcentaje = 100.0
+                trabajo.estado = "cancelado" if cancelado else "hecho"
+                if not cancelado:
+                    trabajo.porcentaje = 100.0
                 trabajo.fin = time.time()

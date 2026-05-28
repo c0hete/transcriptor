@@ -122,6 +122,30 @@ def lista_trabajos():
     return [t.snapshot() for t in TRABAJOS.values()]
 
 
+@app.post("/api/cancelar/{tid}")
+def cancelar(tid: str):
+    """Pide cancelar un trabajo. Si está transcribiendo, corta en el próximo segmento."""
+    trab = TRABAJOS.get(tid)
+    if not trab:
+        raise HTTPException(404, "Trabajo no encontrado")
+    if trab.estado in ("hecho", "error", "cancelado"):
+        return {"ok": False, "motivo": "ya terminado", "estado": trab.estado}
+    trab.pedir_cancelar()
+    return {"ok": True}
+
+
+@app.delete("/api/trabajo/{tid}")
+def quitar_trabajo(tid: str):
+    """Saca un trabajo de la lista (solo si ya no está activo)."""
+    trab = TRABAJOS.get(tid)
+    if not trab:
+        raise HTTPException(404, "Trabajo no encontrado")
+    if trab.estado in ("cargando", "transcribiendo"):
+        raise HTTPException(409, "Cancelalo primero")
+    TRABAJOS.pop(tid, None)
+    return {"ok": True}
+
+
 @app.get("/api/descargar/{tid}")
 def descargar(tid: str):
     trab = TRABAJOS.get(tid)
