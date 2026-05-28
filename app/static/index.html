@@ -28,10 +28,18 @@
   button:hover { border-color: var(--accent); }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
   button:disabled { opacity: .5; cursor: not-allowed; }
-  #drop { border: 2px dashed var(--border); border-radius: 10px; padding: 34px; text-align: center;
+  #drop { border: 2px dashed var(--border); border-radius: 10px; padding: 30px; text-align: center;
     color: var(--muted); cursor: pointer; transition: .15s; }
-  #drop.over { border-color: var(--accent); background: #2f81f71a; color: var(--txt); }
+  #drop.over { border-color: var(--accent); background: #2f81f71a; color: var(--txt); transform: scale(1.01); }
   #drop strong { color: var(--txt); }
+  #drop .ico { font-size: 34px; line-height: 1; margin-bottom: 10px; }
+  /* estado: archivo cargado */
+  #drop.loaded { border-style: solid; border-color: var(--ok); background: #3fb9501a; color: var(--txt); cursor: default; }
+  #drop.loaded .fname { font-size: 17px; font-weight: 700; color: var(--txt); word-break: break-all; }
+  #drop.loaded .fsize { font-size: 13px; color: var(--muted); margin-top: 3px; }
+  button.link { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 13px;
+    margin-top: 10px; padding: 4px; text-decoration: underline; }
+  button.link:hover { color: var(--txt); }
   .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   .metric { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
   .metric .k { font-size: 12px; color: var(--muted); }
@@ -76,13 +84,21 @@
   <section class="panel">
     <h2>2 · Audio</h2>
     <div id="drop">
-      <strong>Arrastrá un audio acá</strong> o hacé clic para elegir<br>
-      <span style="font-size:12px">.opus .mp3 .m4a .wav .ogg .flac</span>
+      <div id="drop-empty">
+        <div class="ico">🎵</div>
+        <strong>Arrastrá un audio acá</strong> o hacé clic para elegir<br>
+        <span style="font-size:12px">.opus .mp3 .m4a .wav .ogg .flac</span>
+      </div>
+      <div id="drop-loaded" hidden>
+        <div class="ico">✅</div>
+        <div class="fname" id="fname"></div>
+        <div class="fsize" id="fsize"></div>
+        <button class="link" type="button" onclick="event.stopPropagation(); setArchivo(null); document.getElementById('file').value='';">quitar / cambiar</button>
+      </div>
       <input type="file" id="file" accept="audio/*" hidden>
     </div>
-    <div style="height:12px"></div>
+    <div style="height:14px"></div>
     <button class="primary" id="go" onclick="transcribir()" disabled>Transcribir</button>
-    <span id="filename" class="empty"></span>
   </section>
 
   <!-- Trabajos -->
@@ -154,7 +170,19 @@ $('file').onchange = e => setArchivo(e.target.files[0]);
 ['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
 ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
 drop.addEventListener('drop', e => setArchivo(e.dataTransfer.files[0]));
-function setArchivo(f) { archivo = f; $('filename').textContent = f ? '  ' + f.name : ''; $('go').disabled = !f; }
+function fmtSize(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(0) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+function setArchivo(f) {
+  archivo = f;
+  $('go').disabled = !f;
+  $('drop').classList.toggle('loaded', !!f);
+  $('drop-empty').hidden = !!f;
+  $('drop-loaded').hidden = !f;
+  if (f) { $('fname').textContent = f.name; $('fsize').textContent = fmtSize(f.size); }
+}
 
 async function transcribir() {
   if (!archivo) return;
