@@ -1,0 +1,11 @@
+# transcriptor — dependencias
+faster-whisper>=1.2.0
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+psutil>=5.9
+
+# GPU (CUDA 12). En Windows ctranslate2 las necesita para device=cuda.
+# Si solo usás CPU, podés omitirlas.
+nvidia-cublas-cu12
+nvidia-cudnn-cu12

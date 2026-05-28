@@ -1,0 +1,42 @@
+# === Secretos (NUNCA al repo) ===
+.env
+*.secret
+*.secret.*
+*.local.*
+*.pem
+*.key
+id_ed25519*
+
+# === Datos personales: audios y transcripciones NO se publican ===
+# Esta app procesa audios privados (clases, reuniones). El contenido es del usuario,
+# no del proyecto. Solo se versiona el código.
+audios/
+salidas/
+transcripciones/
+*.opus
+*.mp3
+*.m4a
+*.wav
+*.txt
+!requirements.txt
+!**/README*.txt
+
+# === Python ===
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# === Modelos Whisper (pesados, se descargan solos) ===
+models/
+*.bin
+
+# === SO / editor ===
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

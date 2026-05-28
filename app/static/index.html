@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>transcriptor</title>
+<style>
+  :root {
+    --bg: #0e1117; --panel: #161b22; --border: #2a3038; --txt: #e6edf3;
+    --muted: #8b949e; --accent: #2f81f7; --ok: #3fb950; --warn: #d29922; --err: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, "Segoe UI", sans-serif; background: var(--bg); color: var(--txt); }
+  header { padding: 18px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: baseline; gap: 12px; }
+  header h1 { font-size: 20px; margin: 0; letter-spacing: .5px; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  main { max-width: 920px; margin: 0 auto; padding: 24px; display: grid; gap: 20px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
+  .panel h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 14px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 0 0 6px; }
+  select, input[type=text] { width: 100%; padding: 9px 11px; background: var(--bg); color: var(--txt);
+    border: 1px solid var(--border); border-radius: 7px; font-size: 14px; }
+  .row { display: flex; gap: 10px; align-items: flex-end; }
+  .row > * { flex: 1; }
+  .row > button { flex: 0 0 auto; }
+  button { padding: 9px 16px; border: 1px solid var(--border); border-radius: 7px; background: #21262d;
+    color: var(--txt); cursor: pointer; font-size: 14px; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  #drop { border: 2px dashed var(--border); border-radius: 10px; padding: 34px; text-align: center;
+    color: var(--muted); cursor: pointer; transition: .15s; }
+  #drop.over { border-color: var(--accent); background: #2f81f71a; color: var(--txt); }
+  #drop strong { color: var(--txt); }
+  .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .metric { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .metric .k { font-size: 12px; color: var(--muted); }
+  .metric .v { font-size: 22px; font-weight: 600; margin: 2px 0; }
+  .bar { height: 7px; background: var(--bg); border-radius: 4px; overflow: hidden; margin-top: 6px; }
+  .bar > i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .4s; }
+  .bar.ram > i { background: var(--warn); }
+  .job { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-top: 10px; }
+  .job .top { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+  .job .name { font-weight: 600; word-break: break-all; }
+  .job .st { font-size: 12px; padding: 2px 8px; border-radius: 20px; background: #21262d; white-space: nowrap; }
+  .st.transcribiendo { color: var(--accent); } .st.hecho { color: var(--ok); }
+  .st.error { color: var(--err); } .st.cargando, .st.en_cola { color: var(--warn); }
+  .job .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .empty { color: var(--muted); font-size: 13px; }
+  a.dl { color: var(--accent); text-decoration: none; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>transcriptor</h1>
+  <span class="sub" id="cfg">audio → texto · local · GPU</span>
+</header>
+<main>
+  <!-- Destino -->
+  <section class="panel">
+    <h2>1 · Carpeta de destino</h2>
+    <label>Carpeta base</label>
+    <div class="row">
+      <input type="text" id="base" placeholder="C:\CODIGO\transcripciones">
+      <button onclick="cargarCarpetas()">Listar</button>
+    </div>
+    <div style="height:12px"></div>
+    <label>Subcarpeta</label>
+    <div class="row">
+      <select id="sub"></select>
+      <button onclick="crearCarpeta()">+ Nueva</button>
+    </div>
+  </section>
+
+  <!-- Audio -->
+  <section class="panel">
+    <h2>2 · Audio</h2>
+    <div id="drop">
+      <strong>Arrastrá un audio acá</strong> o hacé clic para elegir<br>
+      <span style="font-size:12px">.opus .mp3 .m4a .wav .ogg .flac</span>
+      <input type="file" id="file" accept="audio/*" hidden>
+    </div>
+    <div style="height:12px"></div>
+    <button class="primary" id="go" onclick="transcribir()" disabled>Transcribir</button>
+    <span id="filename" class="empty"></span>
+  </section>
+
+  <!-- Trabajos -->
+  <section class="panel">
+    <h2>3 · Progreso</h2>
+    <div id="jobs"><span class="empty">Sin trabajos todavía.</span></div>
+  </section>
+
+  <!-- Métricas -->
+  <section class="panel">
+    <h2>Consumo del equipo</h2>
+    <div class="metrics">
+      <div class="metric">
+        <div class="k">GPU <span id="gpuname"></span></div>
+        <div class="v" id="gpuuso">—</div>
+        <div class="bar"><i id="gpubar"></i></div>
+        <div class="k" id="vram" style="margin-top:8px">VRAM —</div>
+        <div class="bar"><i id="vrambar"></i></div>
+      </div>
+      <div class="metric">
+        <div class="k">CPU</div>
+        <div class="v" id="cpuuso">—</div>
+        <div class="bar"><i id="cpubar"></i></div>
+        <div class="k" id="ram" style="margin-top:8px">RAM —</div>
+        <div class="bar ram"><i id="rambar"></i></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+let archivo = null;
+const $ = id => document.getElementById(id);
+
+async function init() {
+  const c = await (await fetch('/api/config')).json();
+  $('base').value = c.salida_base;
+  $('cfg').textContent = `audio → texto · local · ${c.modelo} · ${c.device_real || c.device_pedido}`;
+  cargarCarpetas();
+  tickMetrics(); setInterval(tickMetrics, 2000);
+  setInterval(tickJobs, 1500);
+}
+
+async function cargarCarpetas() {
+  const base = $('base').value.trim();
+  const r = await (await fetch('/api/listar-carpetas?base=' + encodeURIComponent(base))).json();
+  const sel = $('sub'); sel.innerHTML = '';
+  if (!r.carpetas.length) sel.innerHTML = '<option value="">(sin subcarpetas — creá una)</option>';
+  r.carpetas.forEach(name => {
+    const o = document.createElement('option'); o.value = name; o.textContent = name; sel.appendChild(o);
+  });
+}
+
+async function crearCarpeta() {
+  const nombre = prompt('Nombre de la nueva subcarpeta:');
+  if (!nombre) return;
+  const fd = new FormData();
+  fd.append('base', $('base').value.trim()); fd.append('nombre', nombre);
+  const r = await fetch('/api/crear-carpeta', { method: 'POST', body: fd });
+  if (!r.ok) { alert('Error: ' + (await r.json()).detail); return; }
+  await cargarCarpetas();
+  $('sub').value = nombre.trim();
+}
+
+// Drag & drop
+const drop = $('drop');
+drop.onclick = () => $('file').click();
+$('file').onchange = e => setArchivo(e.target.files[0]);
+['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => setArchivo(e.dataTransfer.files[0]));
+function setArchivo(f) { archivo = f; $('filename').textContent = f ? '  ' + f.name : ''; $('go').disabled = !f; }
+
+async function transcribir() {
+  if (!archivo) return;
+  const base = $('base').value.trim();
+  const sub = $('sub').value;
+  const destino = sub ? base.replace(/[\\\/]$/, '') + '\\' + sub : base;
+  const fd = new FormData();
+  fd.append('audio', archivo); fd.append('destino', destino);
+  $('go').disabled = true;
+  const r = await fetch('/api/transcribir', { method: 'POST', body: fd });
+  if (!r.ok) { alert('Error: ' + (await r.json()).detail); $('go').disabled = false; return; }
+  setArchivo(null); $('file').value = '';
+  tickJobs();
+}
+
+async function tickJobs() {
+  const jobs = await (await fetch('/api/trabajos')).json();
+  const box = $('jobs');
+  if (!jobs.length) { box.innerHTML = '<span class="empty">Sin trabajos todavía.</span>'; return; }
+  box.innerHTML = jobs.map(j => {
+    const dl = j.estado === 'hecho' ? ` · <a class="dl" href="/api/descargar/${j.id}">descargar .txt</a>` : '';
+    const err = j.error ? `<div class="meta" style="color:var(--err)">${j.error}</div>` : '';
+    const min = s => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
+    return `<div class="job">
+      <div class="top"><span class="name">${j.nombre}</span><span class="st ${j.estado}">${j.estado}</span></div>
+      <div class="bar"><i style="width:${j.porcentaje}%"></i></div>
+      <div class="meta">${j.porcentaje}% · ${min(j.avance_seg)}/${min(j.duracion_total)} · ${j.n_segmentos} segmentos · ${j.transcurrido}s${dl}</div>
+      ${err}
+    </div>`;
+  }).join('');
+}
+
+async function tickMetrics() {
+  const m = await (await fetch('/api/metrics')).json();
+  if (m.gpu) {
+    $('gpuname').textContent = '· ' + m.gpu.nombre;
+    $('gpuuso').textContent = m.gpu.uso_pct + '%';
+    $('gpubar').style.width = m.gpu.uso_pct + '%';
+    $('vram').textContent = `VRAM ${Math.round(m.gpu.vram_used_mb)}/${Math.round(m.gpu.vram_total_mb)} MB · ${m.gpu.temp_c}°C`;
+    $('vrambar').style.width = m.gpu.vram_pct + '%';
+  } else { $('gpuuso').textContent = 'sin GPU'; }
+  if (m.cpu && m.cpu.uso_pct != null) {
+    $('cpuuso').textContent = m.cpu.uso_pct + '%';
+    $('cpubar').style.width = m.cpu.uso_pct + '%';
+    $('ram').textContent = `RAM ${m.cpu.ram_used_gb}/${m.cpu.ram_total_gb} GB`;
+    $('rambar').style.width = m.cpu.ram_pct + '%';
+  }
+}
+
+init();
+</script>
+</body>
+</html>
