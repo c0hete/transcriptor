@@ -21,6 +21,13 @@ transcripciones/
 !requirements.txt
 !**/README*.txt
 
+# === Logs / temporales de la app ===
+transcriptor.log
+assets/_preview.png
+
+# === Memoria interna (mente-colmena) — notas de trabajo, no van al repo público ===
+.mente-colmena/
+
 # === Python ===
 __pycache__/
 *.py[cod]

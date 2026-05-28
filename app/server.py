@@ -4,10 +4,13 @@
 Corre en 127.0.0.1 (solo tu máquina). Abrí http://127.0.0.1:8731 en el navegador.
 """
 import os
+import time
 import uuid
 import shutil
+import signal
 import tempfile
 import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
@@ -23,16 +26,67 @@ DEVICE = os.environ.get("WHISPER_DEVICE", "auto")
 COMPUTE = os.environ.get("WHISPER_COMPUTE_TYPE", "float16")
 LANG = os.environ.get("WHISPER_LANGUAGE", "es")
 SALIDA_BASE = os.environ.get("SALIDA_BASE", str(Path.home() / "transcripciones"))
+# Minutos sin actividad del navegador tras los cuales el server se autoapaga.
+# Evita que queden servidores zombies si cerrás la pestaña y te olvidás. 0 = nunca.
+INACTIVIDAD_MIN = float(os.environ.get("TRANSCRIPTOR_INACTIVIDAD_MIN", "20"))
 
 EXT_AUDIO = {".opus", ".mp3", ".m4a", ".wav", ".ogg", ".flac", ".aac", ".webm"}
-
-app = FastAPI(title="transcriptor")
-motor = Motor(modelo=MODELO, device=DEVICE, compute_type=COMPUTE, language=LANG)
 
 # Registro en memoria de trabajos (id -> Trabajo)
 TRABAJOS: dict[str, Trabajo] = {}
 _tmpdir = Path(tempfile.gettempdir()) / "transcriptor_uploads"
 _tmpdir.mkdir(exist_ok=True)
+
+# --- Apagado limpio y autoapagado por inactividad ---
+_ultimo_latido = time.time()  # se actualiza con cada request del navegador
+
+
+def _hay_trabajos_activos() -> bool:
+    return any(t.estado in ("en_cola", "cargando", "transcribiendo") for t in TRABAJOS.values())
+
+
+def _apagar_proceso():
+    """Detiene el proceso del server. En Windows os.kill(SIGINT) sobre uno mismo no baja
+    uvicorn de forma fiable, así que forzamos la salida del proceso directamente."""
+    # Intento limpio primero (POSIX / por si uvicorn lo captura), luego salida dura.
+    try:
+        os.kill(os.getpid(), signal.SIGINT)
+    except Exception:
+        pass
+    time.sleep(1.5)
+    os._exit(0)
+
+
+def _guardian_inactividad():
+    """Apaga el server si pasa INACTIVIDAD_MIN sin requests Y no hay trabajos activos."""
+    if INACTIVIDAD_MIN <= 0:
+        return
+    limite = INACTIVIDAD_MIN * 60
+    while True:
+        time.sleep(15)
+        ocioso = time.time() - _ultimo_latido
+        if ocioso > limite and not _hay_trabajos_activos():
+            _apagar_proceso()
+            return
+
+
+@asynccontextmanager
+async def _lifespan(app):
+    global _ultimo_latido
+    _ultimo_latido = time.time()  # reiniciar el reloj al arrancar
+    threading.Thread(target=_guardian_inactividad, daemon=True).start()
+    yield
+
+
+app = FastAPI(title="transcriptor", lifespan=_lifespan)
+motor = Motor(modelo=MODELO, device=DEVICE, compute_type=COMPUTE, language=LANG)
+
+
+@app.middleware("http")
+async def _registrar_actividad(request, call_next):
+    global _ultimo_latido
+    _ultimo_latido = time.time()
+    return await call_next(request)
 
 
 def _safe_dir(p: str) -> Path:
@@ -51,12 +105,23 @@ def config():
         "modelo": MODELO, "device_pedido": DEVICE,
         "device_real": motor.device_real, "salida_base": SALIDA_BASE,
         "extensiones": sorted(EXT_AUDIO),
+        "inactividad_min": INACTIVIDAD_MIN,
     }
 
 
 @app.get("/api/metrics")
 def metrics():
     return monitor.todo()
+
+
+@app.post("/api/apagar")
+def apagar():
+    """Apaga el servidor (botón de la UI). Bloquea si hay trabajos activos."""
+    if _hay_trabajos_activos():
+        raise HTTPException(409, "Hay transcripciones en curso. Cancelalas o esperá.")
+    # Apagar tras responder, para que el navegador reciba el OK.
+    threading.Timer(0.5, _apagar_proceso).start()
+    return {"ok": True}
 
 
 @app.get("/api/listar-carpetas")

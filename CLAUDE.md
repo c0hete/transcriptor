@@ -19,6 +19,22 @@ gitignored** — solo se versiona código. CI con gitleaks (bloquea) + ruff.
 - `app/static/index.html` — UI completa (HTML+CSS+JS, sin frameworks).
 - `run.py` / `transcriptor.bat` — lanzador (carga `.env`, abre el navegador).
 
+## Apagado del servidor (no dejar zombies)
+
+El lanzador silencioso (`run_silencioso.pyw` / acceso directo del Desktop) corre sin consola,
+así que no hay ventana que cerrar. Tres mecanismos cubren que no queden servidores andando:
+
+1. **Botón "⏻ Apagar"** en la UI → `POST /api/apagar` → mata el proceso (bloquea si hay
+   trabajos activos).
+2. **Autoapagado por inactividad** (`TRANSCRIPTOR_INACTIVIDAD_MIN`, default 20 min): un hilo
+   guardián apaga el proceso si pasa ese tiempo sin requests del navegador Y no hay trabajos
+   activos. 0 = nunca.
+3. **Anti-duplicado:** `run_silencioso.pyw` chequea el puerto antes de arrancar; si ya hay una
+   instancia, solo abre el navegador y sale (no levanta un segundo server).
+
+⚠️ **Apagado en Windows:** `os.kill(getpid(), SIGINT)` sobre uno mismo NO baja uvicorn de forma
+fiable en Windows. Por eso `_apagar_proceso()` intenta SIGINT y luego fuerza `os._exit(0)`.
+
 ## Gotchas
 
 - **CUDA en Windows:** ctranslate2 necesita `cublas64_12.dll` + cuDNN de los pips

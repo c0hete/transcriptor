@@ -14,6 +14,9 @@
   header { padding: 18px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: baseline; gap: 12px; }
   header h1 { font-size: 20px; margin: 0; letter-spacing: .5px; }
   header .sub { color: var(--muted); font-size: 13px; }
+  header .off { margin-left: auto; align-self: center; font-size: 13px; padding: 6px 12px;
+    background: #21262d; border: 1px solid var(--border); border-radius: 7px; color: var(--muted); cursor: pointer; }
+  header .off:hover { border-color: var(--err); color: var(--err); }
   main { max-width: 920px; margin: 0 auto; padding: 24px; display: grid; gap: 20px; }
   .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
   .panel h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 14px; }
@@ -68,6 +71,7 @@
 <header>
   <h1>transcriptor</h1>
   <span class="sub" id="cfg">audio → texto · local · GPU</span>
+  <button id="apagar" class="off" onclick="apagar()" title="Detiene el servidor local">⏻ Apagar</button>
 </header>
 <main>
   <!-- Destino -->
@@ -142,10 +146,23 @@ const $ = id => document.getElementById(id);
 async function init() {
   const c = await (await fetch('/api/config')).json();
   $('base').value = c.salida_base;
-  $('cfg').textContent = `audio → texto · local · ${c.modelo} · ${c.device_real || c.device_pedido}`;
+  let sub = `audio → texto · local · ${c.modelo} · ${c.device_real || c.device_pedido}`;
+  if (c.inactividad_min > 0) sub += ` · autoapaga tras ${c.inactividad_min} min sin uso`;
+  $('cfg').textContent = sub;
   cargarCarpetas();
   tickMetrics(); setInterval(tickMetrics, 2000);
   setInterval(tickJobs, 1500);
+}
+
+async function apagar() {
+  if (!confirm('¿Apagar el servidor de transcriptor?\n\nSe cierra el proceso local. Para volver a usarlo, abrí el acceso directo de nuevo.')) return;
+  try {
+    const r = await fetch('/api/apagar', { method: 'POST' });
+    if (!r.ok) { alert((await r.json()).detail); return; }
+    document.body.innerHTML = '<div style="display:grid;place-items:center;height:100vh;color:#8b949e;font:16px system-ui">Servidor apagado. Ya podés cerrar esta pestaña.</div>';
+  } catch (e) {
+    document.body.innerHTML = '<div style="display:grid;place-items:center;height:100vh;color:#8b949e;font:16px system-ui">Servidor apagado. Ya podés cerrar esta pestaña.</div>';
+  }
 }
 
 async function cargarCarpetas() {
